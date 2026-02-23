@@ -63,7 +63,7 @@ def semantic_search_recipes(query: str, framework: str | None = None, top_k: int
 
 
 @mcp.tool()
-async def search_recipes_tool(query: str, framework: str = "", semantic: bool = False) -> str:
+async def search_recipes_tool(query: str, framework: str = "", semantic: bool = True) -> str:
     """
     Search the Databricks Apps Cookbook for recipes that match your need.
 
