@@ -1,3 +1,4 @@
 mcp
 httpx
 beautifulsoup4
+sentence-transformers

@@ -2,12 +2,18 @@ import asyncio
 import sys
 from mcp.server.fastmcp import FastMCP
 from scraper import build_index, Recipe
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
 
 # Initialize the MCP server
 mcp = FastMCP("databricks-apps-cookbook")
 
 # In-memory recipe index (populated at startup)
 recipe_index: list[Recipe] = []
+
+# Initialize the embedding model for queries
+query_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 
 def search_recipes(query: str, framework: str | None = None) -> list[Recipe]:
@@ -27,19 +33,52 @@ def search_recipes(query: str, framework: str | None = None) -> list[Recipe]:
     ]
 
 
+def semantic_search_recipes(query: str, framework: str | None = None, top_k: int = 5) -> list[Recipe]:
+    """
+    Perform semantic search across recipe embeddings.
+    """
+    if not recipe_index:
+        return []
+
+    query_embedding = query_embedding_model.encode(query, convert_to_numpy=True)
+    
+    # Filter by framework first if specified
+    candidates = [r for r in recipe_index if not framework or r.framework.lower() == framework.lower()]
+    
+    if not candidates:
+        return []
+
+    # Get embeddings of candidate recipes
+    recipe_embeddings = np.array([r.embedding for r in candidates])
+
+    # Calculate cosine similarities
+    similarities = cosine_similarity([query_embedding], recipe_embeddings)[0]
+
+    # Sort by similarity and get top_k
+    ranked_indices = similarities.argsort()[::-1]
+    
+    # Return the actual Recipe objects, not just indices
+    ranked_recipes = [candidates[i] for i in ranked_indices]
+    return ranked_recipes[:top_k]
+
+
 @mcp.tool()
-async def search_recipes_tool(query: str, framework: str = "") -> str:
+async def search_recipes_tool(query: str, framework: str = "", semantic: bool = False) -> str:
     """
     Search the Databricks Apps Cookbook for recipes that match your need.
 
     Args:
         query: What you want to do, e.g. 'read from a Delta table' or 'call an LLM'
         framework: (Optional) Filter by framework: Streamlit, Dash, FastAPI, or Reflex
+        semantic: (Optional) If True, performs a semantic search instead of keyword search.
     """
     if not recipe_index:
         return "Recipe index is still loading. Please try again in a moment."
 
-    results = search_recipes(query, framework or None)
+    if semantic:
+        results = semantic_search_recipes(query, framework or None)
+    else:
+        results = search_recipes(query, framework or None)
 
     if not results:
         return f'No recipes found for "{query}". Try broader terms.'
