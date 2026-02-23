@@ -18,6 +18,20 @@ CATEGORY_URLS = [
 
 @dataclass
 class Recipe:
+    """
+    Represents a single recipe from the Databricks Apps Cookbook.
+
+    Attributes:
+        title (str): The title of the recipe.
+        description (str): A brief description of what the recipe does.
+        url (str): The absolute URL to the recipe page.
+        framework (str): The primary framework used in the recipe (e.g., "Streamlit", "Dash").
+        category (str): The category the recipe belongs to (e.g., "tables", "llm").
+        code_snippet (str): The main code example for the recipe. Defaults to an empty string.
+        dependencies (list[str]): A list of `pip install` commands or dependency hints. Defaults to an empty list.
+        embedding (np.ndarray): A numerical vector representation of the recipe's text content,
+                                used for semantic search. Not included in string representation.
+    """
     title: str
     description: str
     url: str
@@ -29,6 +43,19 @@ class Recipe:
 
 
 async def fetch_page(client: httpx.AsyncClient, path: str) -> BeautifulSoup:
+    """
+    Asynchronously fetches a web page and parses its HTML content.
+
+    Args:
+        client (httpx.AsyncClient): An asynchronous HTTP client to make requests.
+        path (str): The URL path relative to BASE_URL to fetch (e.g., "/docs/category/streamlit").
+
+    Returns:
+        BeautifulSoup: A BeautifulSoup object representing the parsed HTML content of the page.
+
+    Raises:
+        httpx.HTTPStatusError: If the HTTP request returns an unsuccessful status code.
+    """
     response = await client.get(f"{BASE_URL}{path}", follow_redirects=True)
     response.raise_for_status()
     return BeautifulSoup(response.text, "html.parser")
@@ -36,11 +63,16 @@ async def fetch_page(client: httpx.AsyncClient, path: str) -> BeautifulSoup:
 
 def is_recipe_url(href: str) -> bool:
     """
-    Recipe pages are 3+ levels deep under /docs/ and are NOT category pages.
-    e.g. /docs/streamlit/tables/tables_read/ — YES
-         /docs/category/streamlit/           — NO
-         /docs/intro                          — NO
-         /docs/deploy                         — NO
+    Determines if a given URL href corresponds to a recipe page.
+
+    Recipe pages are characterized by being at least three levels deep under '/docs/'
+    and not being category pages or specific ignored documentation pages.
+
+    Args:
+        href (str): The URL href to check.
+
+    Returns:
+        bool: True if the href is a recipe page URL, False otherwise.
     """
     if not href.startswith("/docs/"):
         return False
@@ -56,6 +88,26 @@ def is_recipe_url(href: str) -> bool:
 async def scrape_recipe_page(
     client: httpx.AsyncClient, path: str, framework: str, embedding_model: SentenceTransformer
 ) -> Recipe | None:
+    """
+    Scrapes a single recipe page from the Databricks Apps Cookbook to extract its details.
+
+    Extracts the title, description, main code snippet, dependencies, and generates
+    a semantic embedding for the recipe.
+
+    Args:
+        client (httpx.AsyncClient): An asynchronous HTTP client.
+        path (str): The URL path of the recipe page (e.g., "/docs/streamlit/tables/tables_read/").
+        framework (str): The framework associated with this recipe (e.g., "Streamlit").
+        embedding_model (SentenceTransformer): The model used to generate semantic embeddings.
+
+    Returns:
+        Recipe | None: A Recipe dataclass instance populated with the scraped data and embedding,
+                       or None if scraping fails or essential data is missing.
+
+    Raises:
+        httpx.HTTPStatusError: Propagated from fetch_page if the page cannot be fetched.
+        Exception: Catches and logs other exceptions during the scraping process.
+    """
     try:
         soup = await fetch_page(client, path)
 
@@ -119,9 +171,17 @@ async def scrape_recipe_page(
 
 async def collect_all_links(client: httpx.AsyncClient, start_path: str) -> set[str]:
     """
-    Crawl a category page AND any sub-category pages to collect all recipe links.
-    The cookbook nests recipes under sub-categories like /docs/category/streamlit/tables/
-    so we need to follow those too.
+    Recursively crawls category and sub-category pages to collect all unique recipe links.
+
+    This function starts from a given path, identifies recipe URLs, and follows links
+    to other category pages to discover more recipes.
+
+    Args:
+        client (httpx.AsyncClient): An asynchronous HTTP client.
+        start_path (str): The initial category page URL path to start crawling from.
+
+    Returns:
+        set[str]: A set of unique URL paths corresponding to recipe pages.
     """
     visited = set()
     to_visit = {start_path}
@@ -152,6 +212,16 @@ async def collect_all_links(client: httpx.AsyncClient, start_path: str) -> set[s
 
 
 async def build_index() -> list[Recipe]:
+    """
+    Builds a comprehensive index of recipes by scraping the Databricks Apps Cookbook website.
+
+    This function iterates through predefined category URLs, collects all recipe links,
+    and then concurrently scrapes each recipe page to extract detailed information
+    and generate semantic embeddings.
+
+    Returns:
+        list[Recipe]: A list of Recipe dataclass instances, each representing a scraped recipe.
+    """
     recipes: list[Recipe] = []
 
     # Initialize the embedding model

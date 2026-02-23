@@ -17,7 +17,17 @@ query_embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 
 def search_recipes(query: str, framework: str | None = None) -> list[Recipe]:
-    """Keyword search across title, description, and category."""
+    """
+    Performs a keyword-based search across recipe titles, descriptions, and categories.
+
+    Args:
+        query (str): The search query string.
+        framework (str | None): Optional. Filters results by a specific framework (e.g., "Streamlit").
+
+    Returns:
+        list[Recipe]: A list of Recipe objects that match the keyword query,
+                      optionally filtered by framework.
+    """
     terms = query.lower().split()
 
     return [
@@ -35,7 +45,16 @@ def search_recipes(query: str, framework: str | None = None) -> list[Recipe]:
 
 def semantic_search_recipes(query: str, framework: str | None = None, top_k: int = 5) -> list[Recipe]:
     """
-    Perform semantic search across recipe embeddings.
+    Performs a semantic search across recipe embeddings to find the most relevant recipes.
+
+    Args:
+        query (str): The search query string.
+        framework (str | None): Optional. Filters results by a specific framework (e.g., "Streamlit").
+        top_k (int): The number of top similar recipes to return.
+
+    Returns:
+        list[Recipe]: A list of Recipe objects, semantically ranked by their similarity
+                      to the query, optionally filtered by framework.
     """
     if not recipe_index:
         return []
@@ -65,12 +84,21 @@ def semantic_search_recipes(query: str, framework: str | None = None, top_k: int
 @mcp.tool()
 async def search_recipes_tool(query: str, framework: str = "", semantic: bool = True) -> str:
     """
-    Search the Databricks Apps Cookbook for recipes that match your need.
+    Search the Databricks Apps Cookbook for recipes that match your need, supporting both
+    semantic and keyword-based search.
 
     Args:
-        query: What you want to do, e.g. 'read from a Delta table' or 'call an LLM'
-        framework: (Optional) Filter by framework: Streamlit, Dash, FastAPI, or Reflex
-        semantic: (Optional) If True, performs a semantic search instead of keyword search.
+        query (str): A natural language query describing what you want to achieve,
+                     e.g., 'read from a Delta table' or 'call an LLM'.
+        framework (str): Optional. Filters the search results by a specific framework
+                         like 'Streamlit', 'Dash', 'FastAPI', or 'Reflex'.
+        semantic (bool): Optional. If True (default), performs a semantic search based on
+                         meaning. If False, performs a keyword-based search.
+
+    Returns:
+        str: A formatted string containing the top 5 matching recipes (title, framework,
+             description, and URL), separated by '---', or a message indicating no
+             recipes were found or the index is still loading.
     """
     if not recipe_index:
         return "Recipe index is still loading. Please try again in a moment."
@@ -96,10 +124,17 @@ async def search_recipes_tool(query: str, framework: str = "", semantic: bool = 
 @mcp.tool()
 async def get_recipe(title: str) -> str:
     """
-    Get the full code snippet and details for a specific recipe by title.
+    Retrieves the full details, including code snippets and dependencies, for a specific recipe
+    identified by its title.
 
     Args:
-        title: The exact or partial title of the recipe to retrieve
+        title (str): The exact or partial title of the recipe to retrieve.
+                     A case-insensitive partial match is performed.
+
+    Returns:
+        str: A formatted string containing the recipe's title, framework, URL, description,
+             code snippet (if available, formatted as a Python code block), and dependencies.
+             Returns a "not found" message if no matching recipe is located.
     """
     match = next(
         (r for r in recipe_index if title.lower() in r.title.lower()),
@@ -129,10 +164,15 @@ async def get_recipe(title: str) -> str:
 @mcp.tool()
 async def list_recipes(framework: str = "") -> str:
     """
-    List all available recipes in the cookbook.
+    Lists all available recipes in the Databricks Apps Cookbook, optionally filtered by framework.
 
     Args:
-        framework: (Optional) Filter by framework: Streamlit, Dash, FastAPI, or Reflex
+        framework (str): Optional. Filters the list to show only recipes associated with
+                         a specific framework (e.g., 'Streamlit').
+
+    Returns:
+        str: A newline-separated string listing each recipe's title, framework, and URL.
+             Returns a "No recipes found" message if the filtered list is empty.
     """
     filtered = (
         [r for r in recipe_index if r.framework.lower() == framework.lower()]
@@ -150,15 +190,29 @@ async def list_recipes(framework: str = "") -> str:
 @mcp.tool()
 async def refresh_index() -> str:
     """
-    Re-scrape the Databricks Apps Cookbook and refresh the recipe index.
-    Useful if new recipes have been added since the server started.
+    Re-scrapes the entire Databricks Apps Cookbook to refresh the in-memory recipe index.
+
+    This function is useful for updating the recipe data if new content has been added
+    to the cookbook since the server was last started or the index was built.
+
+    Returns:
+        str: A confirmation message indicating that the index has been refreshed
+             and the total number of recipes loaded.
     """
     global recipe_index
+    print("[server] Refreshing recipe index...", file=sys.stderr, flush=True)
     recipe_index = await build_index()
     return f"Index refreshed. {len(recipe_index)} recipes loaded."
 
 
 async def main():
+    """
+    Main asynchronous function to initialize the server.
+
+    This function is responsible for building the initial recipe index by
+    calling the `build_index` function from the `scraper` module. It
+    prints status messages to stderr during the indexing process.
+    """
     global recipe_index
     print("[server] Building recipe index...", file=sys.stderr, flush=True)
     recipe_index = await build_index()
