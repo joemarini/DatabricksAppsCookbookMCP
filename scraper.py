@@ -164,8 +164,11 @@ async def scrape_recipe_page(
             dependencies=dependencies,
             embedding=recipe_embedding,
         )
+    except httpx.HTTPError as e:
+        print(f"[scraper] Network error while scraping {path}: {e}", file=sys.stderr, flush=True)
+        return None
     except Exception as e:
-        print(f"[scraper] Failed to scrape {path}: {e}", file=sys.stderr, flush=True)
+        print(f"[scraper] Unexpected error scraping {path}: {e}", file=sys.stderr, flush=True)
         return None
 
 
@@ -195,8 +198,11 @@ async def collect_all_links(client: httpx.AsyncClient, start_path: str) -> set[s
 
         try:
             soup = await fetch_page(client, path)
+        except httpx.HTTPError as e:
+            print(f"[scraper] Network error fetching {path}: {e}", file=sys.stderr, flush=True)
+            continue
         except Exception as e:
-            print(f"[scraper] Failed to fetch {path}: {e}", file=sys.stderr, flush=True)
+            print(f"[scraper] Unexpected error fetching {path}: {e}", file=sys.stderr, flush=True)
             continue
 
         for a in soup.find_all("a", href=True):
